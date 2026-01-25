@@ -1,0 +1,19 @@
+#!/bin/sh
+
+msg_file="$1"
+msg="$(cat "$msg_file")"
+
+# 允许合并提交
+case "$msg" in
+  Merge\ *)
+    exit 0
+    ;;
+esac
+
+# 检查是否包含中文字符（基本汉字范围）
+if printf "%s" "$msg" | grep -Eq "[一-龥]"; then
+  exit 0
+fi
+
+echo "提交信息需要包含中文字符（例如：'修复：坐标点数统计'）。" >&2
+exit 1
