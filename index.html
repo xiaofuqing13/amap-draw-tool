@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>高德地图绘制与经纬度提取</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+          Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: #f7f8fa;
+        color: #1f2328;
+      }
+
+      .page {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 12px;
+        padding: 12px;
+        box-sizing: border-box;
+        min-height: 100vh;
+      }
+
+      .map-card,
+      .panel-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+        overflow: hidden;
+      }
+
+      .map-header,
+      .panel-header {
+        padding: 10px 12px;
+        border-bottom: 1px solid #f0f1f3;
+        font-weight: 600;
+        background: #fcfcfd;
+      }
+
+      #map {
+        width: 100%;
+        height: calc(100vh - 80px);
+        min-height: 560px;
+      }
+
+      .panel-body {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      button {
+        border: 1px solid #d0d7de;
+        background: #ffffff;
+        color: #1f2328;
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      button.primary {
+        background: #1677ff;
+        border-color: #1677ff;
+        color: #ffffff;
+      }
+
+      button.danger {
+        background: #fff1f0;
+        border-color: #ffccc7;
+        color: #cf1322;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .hint {
+        font-size: 12px;
+        line-height: 1.6;
+        color: #4b5563;
+        background: #f8fafc;
+        border: 1px dashed #e5e7eb;
+        padding: 8px 10px;
+        border-radius: 8px;
+      }
+
+      .stats {
+        display: flex;
+        gap: 8px;
+        font-size: 13px;
+        color: #374151;
+      }
+
+      .stats span {
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        padding: 4px 8px;
+        border-radius: 999px;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 240px;
+        resize: vertical;
+        border-radius: 8px;
+        border: 1px solid #d0d7de;
+        padding: 10px;
+        font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, "Liberation Mono",
+          monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        box-sizing: border-box;
+        background: #0b1020;
+        color: #e5e7eb;
+      }
+
+      .overlay-list {
+        max-height: 160px;
+        overflow: auto;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 6px 8px;
+        font-size: 13px;
+        background: #fafafa;
+      }
+
+      .overlay-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 4px 0;
+        border-bottom: 1px dashed #eceef2;
+        gap: 8px;
+      }
+
+      .overlay-item:last-child {
+        border-bottom: none;
+      }
+
+      .overlay-item code {
+        background: #eef2ff;
+        border: 1px solid #e0e7ff;
+        padding: 1px 6px;
+        border-radius: 6px;
+        font-size: 12px;
+      }
+
+      .overlay-actions {
+        display: flex;
+        gap: 6px;
+      }
+
+      .overlay-actions button {
+        padding: 4px 6px;
+        font-size: 12px;
+      }
+
+      @media (max-width: 1100px) {
+        .page {
+          grid-template-columns: 1fr;
+        }
+
+        #map {
+          height: 65vh;
+          min-height: 480px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <section class="map-card">
+        <div class="map-header">地图绘制区域</div>
+        <div id="map" aria-label="高德地图"></div>
+      </section>
+
+      <aside class="panel-card">
+        <div class="panel-header">绘制控制台</div>
+        <div class="panel-body">
+          <div class="toolbar" role="group" aria-label="绘制工具">
+            <button id="drawPolygon" class="primary" type="button">绘制多边形</button>
+            <button id="drawRectangle" type="button">绘制矩形</button>
+            <button id="drawCircle" type="button">绘制圆</button>
+            <button id="drawPolyline" type="button">绘制折线</button>
+            <button id="stopDraw" type="button">停止绘制</button>
+            <button id="clearAll" class="danger" type="button">清空图形</button>
+          </div>
+
+          <div class="stats" aria-live="polite">
+            <span id="overlayCount">图形数量：0</span>
+            <span id="pointCount">坐标点数：0</span>
+          </div>
+
+          <div class="overlay-list" id="overlayList" aria-label="图形列表"></div>
+
+          <button id="exportJson" type="button">提取经纬度 JSON</button>
+          <button id="copyJson" type="button">复制 JSON</button>
+
+          <textarea id="output" readonly placeholder="这里会显示所有图形的经纬度结果"></textarea>
+
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      // 高德地图安全密钥（JS API）
+      window._AMapSecurityConfig = {
+        securityJsCode: "22dca722f3544c51a6bc409b36185829",
+      };
+    </script>
+    <script src="https://webapi.amap.com/maps?v=2.0&key=6bbc64aca78cf93f20f96126f8c0e295&plugin=AMap.MouseTool,AMap.ToolBar,AMap.Scale"></script>
+
+    <script>
+      const map = new AMap.Map("map", {
+        zoom: 11,
+        center: [116.397428, 39.90923],
+        viewMode: "2D",
+      });
+
+      map.addControl(new AMap.ToolBar());
+      map.addControl(new AMap.Scale());
+
+      const mouseTool = new AMap.MouseTool(map);
+
+      let overlayId = 1;
+      const overlays = new Map();
+      const API_OVERLAYS = "/api/overlays";
+
+      let persistTimer = null;
+      let isRestoring = false;
+
+      const STYLE_PRESETS = {
+        polygon: {
+          strokeColor: "#1677ff",
+          strokeWeight: 2,
+          fillColor: "#1677ff",
+          fillOpacity: 0.18,
+        },
+        rectangle: {
+          strokeColor: "#13c2c2",
+          strokeWeight: 2,
+          fillColor: "#13c2c2",
+          fillOpacity: 0.15,
+        },
+        circle: {
+          strokeColor: "#722ed1",
+          strokeWeight: 2,
+          fillColor: "#722ed1",
+          fillOpacity: 0.12,
+        },
+        polyline: {
+          strokeColor: "#fa8c16",
+          strokeWeight: 3,
+          strokeOpacity: 0.9,
+        },
+        polylineFill: {
+          strokeColor: "#fa8c16",
+          strokeWeight: 3,
+          fillColor: "#fa8c16",
+          fillOpacity: 0.18,
+        },
+      };
+
+      const overlayCountEl = document.getElementById("overlayCount");
+      const pointCountEl = document.getElementById("pointCount");
+      const overlayListEl = document.getElementById("overlayList");
+      const outputEl = document.getElementById("output");
+
+      const drawButtons = {
+        polygon: document.getElementById("drawPolygon"),
+        rectangle: document.getElementById("drawRectangle"),
+        circle: document.getElementById("drawCircle"),
+        polyline: document.getElementById("drawPolyline"),
+      };
+
+      const stopDrawBtn = document.getElementById("stopDraw");
+      const clearAllBtn = document.getElementById("clearAll");
+      const exportBtn = document.getElementById("exportJson");
+      const copyBtn = document.getElementById("copyJson");
+
+      function setActiveButton(activeKey) {
+        Object.entries(drawButtons).forEach(([key, btn]) => {
+          btn.classList.toggle("primary", key === activeKey);
+        });
+      }
+
+      function stopDraw() {
+        // 不清除已绘制图形，清空由 clearAll 统一处理
+        mouseTool.close(false);
+        setActiveButton(null);
+      }
+
+      function schedulePersist() {
+        if (isRestoring) return;
+        if (persistTimer) window.clearTimeout(persistTimer);
+        persistTimer = window.setTimeout(() => {
+          persistOverlays();
+        }, 120);
+      }
+
+      async function persistOverlays() {
+        const geometries = collectAllGeometry();
+        const payload = {
+          updatedAt: new Date().toISOString(),
+          geometries,
+        };
+
+        try {
+          await fetch(API_OVERLAYS, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
+        } catch (error) {
+          console.error("保存图形失败", error);
+        }
+      }
+
+      function attachOverlayMeta(type, overlay, options = {}) {
+        const { skipPersist = false, idOverride } = options;
+        const id = Number.isFinite(idOverride) ? idOverride : overlayId++;
+        overlayId = Math.max(overlayId, id + 1);
+        overlay.__meta = { id, type };
+        overlays.set(id, overlay);
+        renderOverlayList();
+        updateStats();
+        if (!skipPersist) schedulePersist();
+      }
+
+      function removeOverlay(id, options = {}) {
+        const { skipPersist = false } = options;
+        const overlay = overlays.get(id);
+        if (!overlay) return;
+        map.remove(overlay);
+        overlays.delete(id);
+        renderOverlayList();
+        updateStats();
+        if (!skipPersist) schedulePersist();
+      }
+
+      function clearAll(options = {}) {
+        const { skipPersist = false } = options;
+        overlays.forEach((overlay) => map.remove(overlay));
+        overlays.clear();
+        outputEl.value = "";
+        renderOverlayList();
+        updateStats();
+        if (!skipPersist) schedulePersist();
+      }
+
+      function renderOverlayList() {
+        if (overlays.size === 0) {
+          overlayListEl.innerHTML = "<div>暂无图形</div>";
+          return;
+        }
+
+        const items = [];
+        overlays.forEach((overlay, id) => {
+          const type = overlay.__meta?.type || overlay.CLASS_NAME || "unknown";
+          items.push(`
+            <div class="overlay-item">
+              <div>图形 <code>#${id}</code> · 类型：${type}</div>
+              <div class="overlay-actions">
+                <button data-remove="${id}" type="button">删除</button>
+              </div>
+            </div>
+          `);
+        });
+
+        overlayListEl.innerHTML = items.join("");
+
+        overlayListEl.querySelectorAll("button[data-remove]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const id = Number(btn.getAttribute("data-remove"));
+            removeOverlay(id);
+          });
+        });
+      }
+
+      function toLngLatTuple(lngLat) {
+        return [Number(lngLat.getLng().toFixed(6)), Number(lngLat.getLat().toFixed(6))];
+      }
+
+      function destinationPoint([lng, lat], distanceMeters, bearingDeg) {
+        const R = 6378137;
+        const toRad = (deg) => (deg * Math.PI) / 180;
+        const toDeg = (rad) => (rad * 180) / Math.PI;
+
+        const δ = distanceMeters / R;
+        const θ = toRad(bearingDeg);
+        const φ1 = toRad(lat);
+        const λ1 = toRad(lng);
+
+        const sinφ1 = Math.sin(φ1);
+        const cosφ1 = Math.cos(φ1);
+        const sinδ = Math.sin(δ);
+        const cosδ = Math.cos(δ);
+
+        const sinφ2 = sinφ1 * cosδ + cosφ1 * sinδ * Math.cos(θ);
+        const φ2 = Math.asin(sinφ2);
+        const y = Math.sin(θ) * sinδ * cosφ1;
+        const x = cosδ - sinφ1 * sinφ2;
+        const λ2 = λ1 + Math.atan2(y, x);
+
+        return [Number(toDeg(λ2).toFixed(6)), Number(toDeg(φ2).toFixed(6))];
+      }
+
+      function circleToPolygonPath(circle, steps = 72) {
+        const center = circle.getCenter();
+        const radius = circle.getRadius();
+        const centerTuple = toLngLatTuple(center);
+        const path = [];
+
+        for (let i = 0; i < steps; i += 1) {
+          const bearing = (i / steps) * 360;
+          path.push(destinationPoint(centerTuple, radius, bearing));
+        }
+
+        // 闭合
+        path.push(path[0]);
+        return path;
+      }
+
+      function isLngLatLike(value) {
+        return value && typeof value.getLng === "function" && typeof value.getLat === "function";
+      }
+
+      function ensureClosed(path) {
+        if (!path || path.length === 0) return path;
+        const first = path[0];
+        const last = path[path.length - 1];
+        if (first[0] === last[0] && first[1] === last[1]) return path;
+        return [...path, first];
+      }
+
+      function closeLngLatPath(path) {
+        if (!Array.isArray(path) || path.length === 0) return path;
+        const first = path[0];
+        const last = path[path.length - 1];
+        if (!isLngLatLike(first) || !isLngLatLike(last)) return path;
+        const isClosed =
+          first.getLng() === last.getLng() && first.getLat() === last.getLat();
+        return isClosed ? path : [...path, first];
+      }
+
+      function normalizePath(rawPath, type) {
+        if (!rawPath || rawPath.length === 0) return [];
+
+        // 多边形可能返回多环结构：LngLat[][]，而折线/矩形通常是 LngLat[]
+        if (isLngLatLike(rawPath[0])) {
+          const simplePath = rawPath.map(toLngLatTuple);
+          return type === "polygon" || type === "polyline" ? ensureClosed(simplePath) : simplePath;
+        }
+
+        if (Array.isArray(rawPath[0])) {
+          return rawPath.map((ring) => ensureClosed(ring.map(toLngLatTuple)));
+        }
+
+        return [];
+      }
+
+      function resolveOverlayType(event, overlay) {
+        let type = event.type;
+        if (type === "rect") return "rectangle";
+        if (type && type !== "draw") return type;
+
+        const className = overlay?.CLASS_NAME || "";
+        if (className.includes("Polygon")) return "polygon";
+        if (className.includes("Rectangle")) return "rectangle";
+        if (className.includes("Circle")) return "circle";
+        if (className.includes("Polyline")) return "polyline";
+
+        return "unknown";
+      }
+
+      function createOverlayFromGeometry(geometry) {
+        const type = geometry.type || geometry.shape;
+        if (!type) return null;
+
+        if (type === "circle") {
+          if (!geometry.center || !geometry.radius) return null;
+          return new AMap.Circle({
+            ...STYLE_PRESETS.circle,
+            center: geometry.center,
+            radius: geometry.radius,
+          });
+        }
+
+        if (!geometry.path || geometry.path.length === 0) return null;
+
+        if (type === "polyline") {
+          return new AMap.Polygon({
+            ...STYLE_PRESETS.polylineFill,
+            path: ensureClosed(geometry.path),
+          });
+        }
+
+        const polygonStyle =
+          type === "rectangle" ? STYLE_PRESETS.rectangle : STYLE_PRESETS.polygon;
+        return new AMap.Polygon({
+          ...polygonStyle,
+          path: geometry.path,
+        });
+      }
+
+      async function loadPersistedOverlays() {
+        isRestoring = true;
+        try {
+          const response = await fetch(API_OVERLAYS, { method: "GET" });
+          const data = await response.json();
+          const geometries = Array.isArray(data.geometries) ? data.geometries : [];
+
+          clearAll({ skipPersist: true });
+
+          geometries.forEach((geometry) => {
+            const overlay = createOverlayFromGeometry(geometry);
+            if (!overlay) return;
+            map.add(overlay);
+            attachOverlayMeta(geometry.type || geometry.shape || "unknown", overlay, {
+              skipPersist: true,
+              idOverride: geometry.id,
+            });
+          });
+
+          exportJson();
+        } catch (error) {
+          console.error("加载图形失败", error);
+        } finally {
+          isRestoring = false;
+          renderOverlayList();
+          updateStats();
+        }
+      }
+
+      function extractOverlayPoints(overlay) {
+        const type = overlay.__meta?.type;
+
+        if (type === "circle") {
+          const path = circleToPolygonPath(overlay);
+          return {
+            shape: "circle",
+            center: toLngLatTuple(overlay.getCenter()),
+            radius: overlay.getRadius(),
+            path,
+          };
+        }
+
+        if (typeof overlay.getPath === "function") {
+          const rawPath = overlay.getPath();
+          const path = normalizePath(rawPath, type);
+          return {
+            shape: type || "path",
+            path,
+          };
+        }
+
+        return {
+          shape: type || "unknown",
+          path: [],
+        };
+      }
+
+      function collectAllGeometry() {
+        const result = [];
+        overlays.forEach((overlay) => {
+          const info = extractOverlayPoints(overlay);
+          result.push({
+            id: overlay.__meta?.id,
+            type: overlay.__meta?.type,
+            ...info,
+          });
+        });
+        return result;
+      }
+
+      function countAllPoints(geometries) {
+        const countRingPoints = (ring) => {
+          if (!Array.isArray(ring) || ring.length === 0) return 0;
+          const first = ring[0];
+          const last = ring[ring.length - 1];
+          const isClosed =
+            Array.isArray(first) &&
+            Array.isArray(last) &&
+            first[0] === last[0] &&
+            first[1] === last[1];
+          return isClosed ? Math.max(0, ring.length - 1) : ring.length;
+        };
+
+        return geometries.reduce((sum, item) => {
+          if (!item.path) return sum;
+          const isNestedRing = Array.isArray(item.path[0]) && Array.isArray(item.path[0][0]);
+          if (isNestedRing) {
+            return sum + item.path.reduce((ringSum, ring) => ringSum + countRingPoints(ring), 0);
+          }
+          return sum + countRingPoints(item.path);
+        }, 0);
+      }
+
+      function updateStats() {
+        const geometries = collectAllGeometry();
+        overlayCountEl.textContent = `图形数量：${geometries.length}`;
+        pointCountEl.textContent = `坐标点数：${countAllPoints(geometries)}`;
+      }
+
+      function exportJson() {
+        const geometries = collectAllGeometry();
+        outputEl.value = JSON.stringify(
+          {
+            generatedAt: new Date().toISOString(),
+            count: geometries.length,
+            geometries,
+          },
+          null,
+          2,
+        );
+        updateStats();
+      }
+
+      async function copyJson() {
+        if (!outputEl.value) {
+          exportJson();
+        }
+
+        try {
+          await navigator.clipboard.writeText(outputEl.value);
+          copyBtn.textContent = "已复制";
+          setTimeout(() => {
+            copyBtn.textContent = "复制 JSON";
+          }, 1200);
+        } catch (error) {
+          copyBtn.textContent = "复制失败";
+          setTimeout(() => {
+            copyBtn.textContent = "复制 JSON";
+          }, 1200);
+        }
+      }
+
+      drawButtons.polygon.addEventListener("click", () => {
+        stopDraw();
+        setActiveButton("polygon");
+        mouseTool.polygon(STYLE_PRESETS.polygon);
+      });
+
+      drawButtons.rectangle.addEventListener("click", () => {
+        stopDraw();
+        setActiveButton("rectangle");
+        mouseTool.rectangle(STYLE_PRESETS.rectangle);
+      });
+
+      drawButtons.circle.addEventListener("click", () => {
+        stopDraw();
+        setActiveButton("circle");
+        mouseTool.circle(STYLE_PRESETS.circle);
+      });
+
+      drawButtons.polyline.addEventListener("click", () => {
+        stopDraw();
+        setActiveButton("polyline");
+        mouseTool.polyline(STYLE_PRESETS.polyline);
+      });
+
+      stopDrawBtn.addEventListener("click", stopDraw);
+      clearAllBtn.addEventListener("click", clearAll);
+      exportBtn.addEventListener("click", exportJson);
+      copyBtn.addEventListener("click", copyJson);
+
+      mouseTool.on("draw", (event) => {
+        const overlay = event.obj;
+        const type = resolveOverlayType(event, overlay);
+
+        let finalOverlay = overlay;
+        let finalType = type;
+
+        if (type === "polyline" && typeof overlay.getPath === "function") {
+          const closedPath = closeLngLatPath(overlay.getPath());
+          const polygon = new AMap.Polygon({
+            ...STYLE_PRESETS.polylineFill,
+            path: closedPath,
+          });
+          map.add(polygon);
+          map.remove(overlay);
+          finalOverlay = polygon;
+          finalType = "polyline";
+        }
+
+        attachOverlayMeta(finalType, finalOverlay);
+        stopDraw();
+        exportJson();
+      });
+
+      loadPersistedOverlays();
+    </script>
+  </body>
+</html>
