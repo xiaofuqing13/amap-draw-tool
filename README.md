@@ -1,5 +1,8 @@
 # 高德地图绘制与坐标提取
 
+![HTML](https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white) ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?logo=javascript&logoColor=black) ![License](https://img.shields.io/badge/License-MIT-green)
+
+
 这是一个本地可运行的单页工具：
 - 在高德地图上绘制多边形 / 矩形 / 圆 / 折线（折线会自动闭合并带填充色）
 - 自动提取并展示所有图形的经纬度
